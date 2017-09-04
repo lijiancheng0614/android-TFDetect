@@ -1,0 +1,77 @@
+project.buildDir = 'gradleBuild'
+getProject().setBuildDir('gradleBuild')
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:2.3.3'
+        classpath 'org.apache.httpcomponents:httpclient:4.5.2'
+    }
+}
+
+allprojects {
+    repositories {
+        jcenter()
+    }
+}
+
+def cpuType = 'armeabi-v7a'
+
+project.ext.ASSET_DIR = projectDir.toString() + '/assets'
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 26
+    buildToolsVersion "26.0.1"
+
+    defaultConfig {
+        applicationId = 'org.tensorflow.demo'
+        minSdkVersion 21
+        targetSdkVersion 23
+        ndk {
+            abiFilters "${cpuType}"
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_TOOLCHAIN=gcc', '-DANDROID_STL=gnustl_static'
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path './jni/CMakeLists.txt'
+        }
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+    sourceSets {
+        main {
+            // Android demo app sources.
+            java {
+                srcDir 'src'
+            }
+
+            manifest.srcFile 'AndroidManifest.xml'
+            resources.srcDirs = ['src']
+            aidl.srcDirs = ['src']
+            renderscript.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = [project.ext.ASSET_DIR]
+            jniLibs.srcDirs = ['libs']
+        }
+
+        debug.setRoot('build-types/debug')
+        release.setRoot('build-types/release')
+    }
+}
+
+dependencies {
+    compile 'org.tensorflow:tensorflow-android:+'
+}
