@@ -25,10 +25,8 @@ import android.graphics.Paint;
 import android.graphics.Paint.Style;
 import android.graphics.RectF;
 import android.graphics.Typeface;
-import android.media.ImageReader;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.os.SystemClock;
-import android.os.Trace;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.Display;
@@ -84,12 +82,9 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         borderedText = new BorderedText(textSizePx);
         borderedText.setTypeface(Typeface.MONOSPACE);
 
-        int cropSize = TF_OD_API_INPUT_SIZE;
-
         try {
             detector = TensorFlowObjectDetectionAPIModel.create(
                     getAssets(), TF_OD_API_MODEL_FILE, TF_OD_API_LABELS_FILE, TF_OD_API_INPUT_SIZE);
-            cropSize = TF_OD_API_INPUT_SIZE;
         } catch (final IOException e) {
             LOGGER.e("Exception initializing classifier!", e);
             Toast toast =
@@ -111,12 +106,12 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
         LOGGER.i("Initializing at size %dx%d", previewWidth, previewHeight);
         rgbFrameBitmap = Bitmap.createBitmap(previewWidth, previewHeight, Config.ARGB_8888);
-        croppedBitmap = Bitmap.createBitmap(cropSize, cropSize, Config.ARGB_8888);
+        croppedBitmap = Bitmap.createBitmap(TF_OD_API_INPUT_SIZE, TF_OD_API_INPUT_SIZE, Config.ARGB_8888);
 
         frameToCropTransform =
                 ImageUtils.getTransformationMatrix(
                         previewWidth, previewHeight,
-                        cropSize, cropSize,
+                        TF_OD_API_INPUT_SIZE, TF_OD_API_INPUT_SIZE,
                         sensorOrientation, MAINTAIN_ASPECT);
 
         cropToFrameTransform = new Matrix();
@@ -126,40 +121,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                 new DrawCallback() {
                     @Override
                     public void drawCallback(final Canvas canvas) {
-                        if (!isDebug()) {
-                            return;
-                        }
-                        final Bitmap copy = cropCopyBitmap;
-                        if (copy == null) {
-                            return;
-                        }
-
-                        final int backgroundColor = Color.argb(100, 0, 0, 0);
-                        canvas.drawColor(backgroundColor);
-
-                        final Matrix matrix = new Matrix();
-                        final float scaleFactor = 2;
-                        matrix.postScale(scaleFactor, scaleFactor);
-                        matrix.postTranslate(
-                                canvas.getWidth() - copy.getWidth() * scaleFactor,
-                                canvas.getHeight() - copy.getHeight() * scaleFactor);
-                        canvas.drawBitmap(copy, matrix, new Paint());
-
-                        final Vector<String> lines = new Vector<>();
-                        if (detector != null) {
-                            final String statString = detector.getStatString();
-                            final String[] statLines = statString.split("\n");
-                            Collections.addAll(lines, statLines);
-                        }
-                        lines.add("");
-
-                        lines.add("Frame: " + previewWidth + "x" + previewHeight);
-                        lines.add("Crop: " + copy.getWidth() + "x" + copy.getHeight());
-                        lines.add("View: " + canvas.getWidth() + "x" + canvas.getHeight());
-                        lines.add("Rotation: " + sensorOrientation);
-                        lines.add("Inference time: " + lastProcessingTimeMs + "ms");
-
-                        borderedText.drawLines(canvas, 10, canvas.getHeight() - 10, lines);
+                        renderDebug(canvas);
                     }
                 });
     }
@@ -189,30 +151,22 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                         paint.setStyle(Style.STROKE);
                         paint.setStrokeWidth(2.0f);
 
-                        final List<Classifier.Recognition> mappedRecognitions =
-                                new LinkedList<>();
-
                         for (final Classifier.Recognition result : results) {
                             final RectF location = result.getLocation();
                             if (location != null && result.getConfidence() >= MINIMUM_CONFIDENCE_TF_OD_API) {
                                 canvas.drawRect(location, paint);
-
                                 cropToFrameTransform.mapRect(location);
                                 result.setLocation(location);
-                                mappedRecognitions.add(result);
                             }
                         }
 
                         requestRender();
                         computing = false;
+                        if (postInferenceCallback != null) {
+                            postInferenceCallback.run();
+                        }
                     }
                 });
-
-        Trace.endSection();
-    }
-
-    @Override
-    public void onImageAvailable(final ImageReader reader) {
     }
 
     @Override
@@ -228,5 +182,42 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     @Override
     public void onSetDebug(final boolean debug) {
         detector.enableStatLogging(debug);
+    }
+
+    private void renderDebug(final Canvas canvas) {
+        if (!isDebug()) {
+            return;
+        }
+        final Bitmap copy = cropCopyBitmap;
+        if (copy == null) {
+            return;
+        }
+
+        final int backgroundColor = Color.argb(100, 0, 0, 0);
+        canvas.drawColor(backgroundColor);
+
+        final Matrix matrix = new Matrix();
+        final float scaleFactor = 2;
+        matrix.postScale(scaleFactor, scaleFactor);
+        matrix.postTranslate(
+                canvas.getWidth() - copy.getWidth() * scaleFactor,
+                canvas.getHeight() - copy.getHeight() * scaleFactor);
+        canvas.drawBitmap(copy, matrix, new Paint());
+
+        final Vector<String> lines = new Vector<>();
+        if (detector != null) {
+            final String statString = detector.getStatString();
+            final String[] statLines = statString.split("\n");
+            Collections.addAll(lines, statLines);
+        }
+        lines.add("");
+
+        lines.add("Frame: " + previewWidth + "x" + previewHeight);
+        lines.add("Crop: " + copy.getWidth() + "x" + copy.getHeight());
+        lines.add("View: " + canvas.getWidth() + "x" + canvas.getHeight());
+        lines.add("Rotation: " + sensorOrientation);
+        lines.add("Inference time: " + lastProcessingTimeMs + "ms");
+
+        borderedText.drawLines(canvas, 10, canvas.getHeight() - 10, lines);
     }
 }
