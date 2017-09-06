@@ -15,7 +15,7 @@ This project focuses on object detection, you may refer to https://github.com/te
 
 - Android Support Repository
 
-- Camera API2 is not needed.
+- Camera2 API is not needed.
 
 ## Getting Started
 

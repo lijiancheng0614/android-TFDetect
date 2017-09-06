@@ -61,7 +61,7 @@ public abstract class CameraActivity extends Activity implements OnImageAvailabl
     protected Runnable postInferenceCallback;
     protected byte[][] yuvBytes = new byte[3][];
     protected int yRowStride;
-    private boolean debug = true;
+    private boolean debug = false;
     private Handler handler;
     private HandlerThread handlerThread;
     private boolean useCamera2API;
@@ -349,14 +349,14 @@ public abstract class CameraActivity extends Activity implements OnImageAvailabl
     }
 
     public void requestRender() {
-        final OverlayView overlay = (OverlayView) findViewById(R.id.debug_overlay);
+        final OverlayView overlay = findViewById(R.id.debug_overlay);
         if (overlay != null) {
             overlay.postInvalidate();
         }
     }
 
     public void addCallback(final OverlayView.DrawCallback callback) {
-        final OverlayView overlay = (OverlayView) findViewById(R.id.debug_overlay);
+        final OverlayView overlay = findViewById(R.id.debug_overlay);
         if (overlay != null) {
             overlay.addCallback(callback);
         }

@@ -27,6 +27,7 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.util.Size;
 import android.util.TypedValue;
 import android.view.Display;
@@ -50,29 +51,32 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private static final String TF_OD_API_MODEL_FILE =
             "file:///android_asset/ssd_mobilenet_v1_android_export.pb";
     private static final String TF_OD_API_LABELS_FILE = "file:///android_asset/coco_labels_list.txt";
-    // Minimum detection confidence to track a detection.
     private static final float MINIMUM_CONFIDENCE_TF_OD_API = 0.6f;
     private static final boolean MAINTAIN_ASPECT = false;
     private static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
     private static final boolean SAVE_PREVIEW_BITMAP = false;
     private static final float TEXT_SIZE_DIP = 10;
+    private static final int[] COLORS = {
+            Color.BLUE, Color.RED, Color.GREEN, Color.YELLOW, Color.CYAN, Color.MAGENTA, Color.WHITE,
+            Color.parseColor("#55FF55"), Color.parseColor("#FFA500"), Color.parseColor("#FF8888"),
+            Color.parseColor("#AAAAFF"), Color.parseColor("#FFFFAA"), Color.parseColor("#55AAAA"),
+            Color.parseColor("#AA33AA"), Color.parseColor("#0D0068")
+    };
+    private final Paint boxPaint = new Paint();
     private Integer sensorOrientation;
-
     private Classifier detector;
-
     private int previewWidth = 0;
     private int previewHeight = 0;
     private Bitmap rgbFrameBitmap = null;
     private Bitmap croppedBitmap = null;
-
     private Matrix frameToCropTransform;
     private Matrix cropToFrameTransform;
-
     private Bitmap cropCopyBitmap;
-
     private BorderedText borderedText;
-
     private long lastProcessingTimeMs;
+    private OverlayView detectionOverlay;
+    private List<Classifier.Recognition> mappedRecognitions =
+            new LinkedList<>();
 
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
@@ -124,6 +128,18 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                         renderDebug(canvas);
                     }
                 });
+
+        boxPaint.setColor(Color.RED);
+        boxPaint.setStyle(Style.STROKE);
+        boxPaint.setStrokeWidth(8.0f);
+        detectionOverlay = findViewById(R.id.detection_overlay);
+        detectionOverlay.addCallback(
+                new DrawCallback() {
+                    @Override
+                    public void drawCallback(final Canvas canvas) {
+                        renderOverlay(canvas);
+                    }
+                });
     }
 
     protected void processImageRGBbytes(int[] rgbBytes) {
@@ -151,16 +167,19 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                         paint.setStyle(Style.STROKE);
                         paint.setStrokeWidth(2.0f);
 
+                        mappedRecognitions.clear();
                         for (final Classifier.Recognition result : results) {
                             final RectF location = result.getLocation();
                             if (location != null && result.getConfidence() >= MINIMUM_CONFIDENCE_TF_OD_API) {
                                 canvas.drawRect(location, paint);
                                 cropToFrameTransform.mapRect(location);
                                 result.setLocation(location);
+                                mappedRecognitions.add(result);
                             }
                         }
 
                         requestRender();
+                        detectionOverlay.postInvalidate();
                         computing = false;
                         if (postInferenceCallback != null) {
                             postInferenceCallback.run();
@@ -171,7 +190,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
     @Override
     protected int getLayoutId() {
-        return R.layout.camera_connection_fragment_tracking;
+        return R.layout.camera_connection_fragment_detection;
     }
 
     @Override
@@ -182,6 +201,36 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     @Override
     public void onSetDebug(final boolean debug) {
         detector.enableStatLogging(debug);
+    }
+
+    private void renderOverlay(final Canvas canvas) {
+        final float multiplier =
+                Math.min(canvas.getWidth() / (float) previewHeight, canvas.getHeight() / (float) previewWidth);
+        Matrix frameToCanvasMatrix =
+                ImageUtils.getTransformationMatrix(
+                        previewWidth,
+                        previewHeight,
+                        (int) (multiplier * previewHeight),
+                        (int) (multiplier * previewWidth),
+                        sensorOrientation,
+                        false);
+        int count = 0;
+        for (final Classifier.Recognition recognition : mappedRecognitions) {
+            final RectF location = new RectF(recognition.getLocation());
+
+            frameToCanvasMatrix.mapRect(location);
+            boxPaint.setColor(COLORS[count]);
+            count = (count + 1) % COLORS.length;
+
+            final float cornerSize = Math.min(location.width(), location.height()) / 8.0f;
+            canvas.drawRoundRect(location, cornerSize, cornerSize, boxPaint);
+
+            final String labelString =
+                    !TextUtils.isEmpty(recognition.getTitle())
+                            ? String.format("%s %.2f", recognition.getTitle(), recognition.getConfidence())
+                            : String.format("%.2f", recognition.getConfidence());
+            borderedText.drawText(canvas, location.left + cornerSize, location.bottom, labelString);
+        }
     }
 
     private void renderDebug(final Canvas canvas) {
